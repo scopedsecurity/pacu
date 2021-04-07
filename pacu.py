@@ -353,6 +353,7 @@ class Main:
         if type(regions[service]) == dict and regions[service].get('endpoints'):
             if 'aws-global' in regions[service]['endpoints']:
                 return [None]
+            
             if 'all' in session.session_regions:
                 valid_regions = list(regions[service]['endpoints'].keys())
                 if 'local' in valid_regions:
@@ -560,6 +561,7 @@ class Main:
 
     def parse_command(self, command):
         command = command.strip()
+        print(command)
 
         if command.split(' ')[0] == 'aws':
             self.run_aws_cli_command(command)
@@ -570,7 +572,7 @@ class Main:
         except ValueError:
             self.print('  Error: Unbalanced quotes in command')
             return
-
+        
         if not command or command[0] == '':
             return
         elif command[0] == 'data':
@@ -662,6 +664,18 @@ class Main:
             self.print('\n  Did not find the AWS CLI profile: {}\n'.format(profile_name))
             boto3_session = boto3.session.Session()
             print('  Profiles that are available:\n    {}\n'.format('\n    '.join(boto3_session.available_profiles)))
+    
+    def import_env_awscli_key(self) -> None:
+        boto3_session = boto3.session.Session()
+        creds = boto3_session.get_credentials()
+        if creds:
+            try:
+                self.set_keys(key_alias='imported-env-keys', access_key_id=creds.access_key, secret_access_key=creds.secret_key,session_token=creds.token)
+                self.print('  Imported keys as "imported-env-keys"')
+            except botocore.exceptions.ProfileNotFound:
+                self.print('\n  Did not find AWS credentials in the environment\n')
+        else:
+            self.print('\n  Did not find AWS credentials in the environment\n')
 
     def run_aws_cli_command(self, command: List[str]) -> None:
         try:
@@ -1112,7 +1126,6 @@ aws_secret_access_key = {}
 
     def set_keys(self, key_alias: str = None, access_key_id: str = None, secret_access_key: str = None, session_token: str = None):
         session = self.get_active_session()
-
         # If key_alias is None, then it's being run normally from the command line (set_keys),
         # otherwise it means it is set programmatically and we don't want any prompts if it is
         # done programatically
@@ -1127,6 +1140,7 @@ aws_secret_access_key = {}
             new_value = self.input('Key alias [{}]: '.format(session.key_alias))
         else:
             new_value = key_alias.strip()
+            print(session)
             self.print('Key alias [{}]: {}'.format(session.key_alias, new_value), output='file')
         if str(new_value.strip().lower()) == 'c':
             session.key_alias = None
@@ -1275,6 +1289,32 @@ aws_secret_access_key = {}
         print('\nUse "swap_session" to change to another session.')
 
         return
+
+    def session_exists(self, session_name) -> bool:
+        all_sessions = self.database.query(PacuSession).all()
+        for index, session in enumerate(all_sessions, 0):
+            if session_name == session.name:
+                return session
+    
+    def new_cli_session(self, session_name) -> None:
+        prev_session = self.session_exists(session_name)
+        if prev_session:
+            return prev_session
+
+        session_data: Dict[str, str] = dict()
+        session_data['name'] = session_name
+        session_data['is_active'] = True
+        session = PacuSession(**session_data)
+        self.database.add(session)
+        self.database.commit()
+
+        session_downloads_directory = './sessions/{}/downloads/'.format(session_name)
+        if not os.path.exists(session_downloads_directory):
+            os.makedirs(session_downloads_directory)
+
+        print('Session {} created.'.format(session_name))
+
+        return session
 
     def new_session(self) -> PacuSession:
         session_data: Dict[str, str] = dict()
@@ -1531,9 +1571,7 @@ aws_secret_access_key = {}
     def run_cli(self, *args) -> None:
         self.database = get_database_connection(settings.DATABASE_CONNECTION_PATH)
         sessions: List[PacuSession] = self.database.query(PacuSession).all()
-
         arg = args[0]
-
         session: str = arg.session
         module_name: str = arg.module_name
         service = arg.data
@@ -1542,6 +1580,9 @@ aws_secret_access_key = {}
 
         pacu_help: bool = arg.pacu_help
         pacu_help_cmd = ['help']
+
+        if arg.create_session:
+            self.new_cli_session(arg.create_session)
 
         if session is not None:
             session_names = [x.name for x in sessions]
@@ -1705,6 +1746,8 @@ aws_secret_access_key = {}
     def run(self) -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument('--session', required=False, default=None, help='<session name>', metavar='')
+        parser.add_argument('--create-session', required=False, default=None, help='<session name>', metavar='')
+        parser.add_argument('--import-env-aws-keys', action='store_true', help='Import AWS keys stored in env')
         parser.add_argument('--module-name', required=False, default=None, help='<module name>', metavar='')
         parser.add_argument('--data', required=False, default=None, help='<service name/all>', metavar='')
         parser.add_argument('--module-args', default=None, help='<--module-args=\'--regions us-east-1,us-east-1\'>', metavar='')
@@ -1712,11 +1755,26 @@ aws_secret_access_key = {}
         parser.add_argument('--pacu-help', action='store_true', help='List the Pacu help window')
         parser.add_argument('--module-info', action='store_true', help='Get information on a specific module, use --module-name')
         parser.add_argument('--exec', action='store_true', help='exec module')
+        parser.add_argument('--pacu-command', default=None, help='<--pacu-command=\'ls\'>', metavar='')
+        parser.add_argument('--cli', action='store_true', help='Pass this flag to enable CLI without session and automatiaclly read AWS keys from env')
         parser.add_argument('--set-regions', nargs='+', default=None, help='<region1 region2 ...> or <all> for all', metavar='')
         parser.add_argument('--whoami', action='store_true', help='Display information on current IAM user')
         args = parser.parse_args()
+        
+        if args.cli and args.session:
+            self.database = get_database_connection(settings.DATABASE_CONNECTION_PATH)
+            self.new_cli_session(args.session)
+            self.import_env_awscli_key()
 
-        if any([args.session, args.data, args.module_args, args.exec, args.set_regions, args.whoami]):
+        if args.pacu_command:
+            self.database = get_database_connection(settings.DATABASE_CONNECTION_PATH)
+            self.parse_command(args.pacu_command)
+        elif args.create_session:
+            self.run_cli(args)
+        elif args.import_env_aws_keys:
+            self.database = get_database_connection(settings.DATABASE_CONNECTION_PATH)
+            self.import_env_awscli_key()
+        elif any([args.session, args.data, args.module_args, args.exec, args.set_regions, args.whoami]):
             if args.session is None:
                 print('When running Pacu from the CLI, a session is necessary')
                 exit()
