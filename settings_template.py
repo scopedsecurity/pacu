@@ -12,8 +12,8 @@ import os
 # at the time an error is written to the logs. Use with extreme caution.
 ERROR_LOG_VERBOSITY = 'minimal'
 
-
-DATABASE_FILE_PATH = os.path.join(os.getcwd(), 'sqlite.db')
+DIR = os.path.dirname(os.path.realpath(__file__))
+DATABASE_FILE_PATH = os.path.join(DIR, 'sqlite.db')
 
 if os.path.isabs(DATABASE_FILE_PATH):
     DATABASE_CONNECTION_PATH = 'sqlite:///' + DATABASE_FILE_PATH

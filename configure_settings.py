@@ -5,10 +5,11 @@ import os
 
 
 def copy_settings_template_into_settings_file_if_not_present() -> None:
-    if not os.path.exists('settings.py'):
+    directory = os.path.dirname(os.path.realpath(__file__))
+    if not os.path.exists(directory + '/settings.py'):
         print('\nsettings.py file not found. Creating one from settings_template.py')
-        with open('settings_template.py', 'r') as settings_template:
-            with open('settings.py', 'w+') as settings_file:
+        with open(directory + '/settings_template.py', 'r') as settings_template:
+            with open(directory + '/settings.py', 'w+') as settings_file:
                 settings_file.write(settings_template.read())
         print('  Settings file created.\n')
 
