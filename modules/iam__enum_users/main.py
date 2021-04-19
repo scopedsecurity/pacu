@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import botocore
-
+import os
 
 module_info = {
     'name': 'iam__enum_users',
@@ -39,7 +39,8 @@ def main(args, pacu_main):
         return None
 
     if args.word_list is None:
-        word_list_path = './modules/{}/default-word-list.txt'.format(module_info['name'])
+        DIR = os.path.dirname(os.path.realpath(__file__))
+        word_list_path = DIR + '/default-word-list.txt'
     else:
         word_list_path = args.word_list.strip()
 

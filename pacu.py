@@ -14,6 +14,8 @@ import traceback
 import argparse
 from typing import List, Optional, Any, Dict, Union, Tuple
 
+DIR = os.path.dirname(os.path.realpath(__file__))
+
 try:
     import requests
     import boto3
@@ -133,7 +135,8 @@ def display_pacu_help():
 
 
 def import_module_by_name(module_name: str, include: List[str] = []) -> Any:  # TODO: define module type
-    file_path = os.path.join(os.getcwd(), 'modules', module_name, 'main.py')
+
+    file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'modules', module_name, 'main.py')
     if os.path.exists(file_path):
         import_path = 'modules.{}.main'.format(module_name).replace('/', '.').replace('\\', '.')
         module = __import__(import_path, globals(), locals(), include, 0)
@@ -190,9 +193,9 @@ class Main:
 
         try:
             if session:
-                log_file_path = 'sessions/{}/error_log.txt'.format(session.name)
+                log_file_path = DIR + '/sessions/{}/error_log.txt'.format(session.name)
             else:
-                log_file_path = 'global_error_log.txt'
+                log_file_path = DIR + '/global_error_log.txt'
 
             print('\n[{}] Pacu encountered an error while running the previous command. Check {} for technical '
                   'details. [LOG LEVEL: {}]\n\n    {}\n'.format(timestamp, log_file_path,
@@ -277,11 +280,11 @@ class Main:
 
         if output == 'both' or output == 'file':
             if output_type == 'plain':
-                with open('sessions/{}/cmd_log.txt'.format(session_name), 'a+') as text_file:
+                with open(DIR + '/sessions/{}/cmd_log.txt'.format(session_name), 'a+') as text_file:
                     text_file.write('{}\n'.format(message))
             elif output_type == 'xml':
                 # TODO: Implement actual XML output
-                with open('sessions/{}/cmd_log.xml'.format(session_name), 'a+') as xml_file:
+                with open(DIR + '/sessions/{}/cmd_log.xml'.format(session_name), 'a+') as xml_file:
                     xml_file.write('{}\n'.format(message))
                 pass
             else:
@@ -312,12 +315,12 @@ class Main:
         res = input(message)
         if output == 'both':
             if output_type == 'plain':
-                with open('sessions/{}/cmd_log.txt'.format(session_name), 'a+') as file:
+                with open(DIR + '/sessions/{}/cmd_log.txt'.format(session_name), 'a+') as file:
                     file.write('{} {}\n'.format(message, res))
             elif output_type == 'xml':
                 # TODO: Implement actual XML output
                 # now = time.time()
-                with open('sessions/{}/cmd_log.xml'.format(session_name), 'a+') as file:
+                with open(DIR + '/sessions/{}/cmd_log.xml'.format(session_name), 'a+') as file:
                     file.write('{} {}\n'.format(message, res))
             else:
                 print('  Unrecognized output type: {}'.format(output_type))
@@ -333,7 +336,7 @@ class Main:
 
         service = service.lower()
 
-        with open('./modules/service_regions.json', 'r+') as regions_file:
+        with open(DIR + '/modules/service_regions.json', 'r+') as regions_file:
             regions = json.load(regions_file)
 
         # TODO: Add an option for GovCloud regions
@@ -452,7 +455,7 @@ class Main:
         return True
 
     def check_for_updates(self):
-        with open('./last_update.txt', 'r') as f:
+        with open(DIR + './last_update.txt', 'r') as f:
             local_last_update = f.read().rstrip()
 
         latest_update = requests.get('https://raw.githubusercontent.com/RhinoSecurityLabs/pacu/master/last_update.txt').text.rstrip()
@@ -527,7 +530,7 @@ class Main:
                         r = requests.get(dependency, stream=True)
                         if r.status_code == 404:
                             raise Exception('File not found.')
-                        with open('./dependencies/{}'.format(name), 'wb') as f:
+                        with open(DIR + '/dependencies/{}'.format(name), 'wb') as f:
                             for chunk in r.iter_content(chunk_size=1024):
                                 if chunk:
                                     f.write(chunk)
@@ -673,9 +676,11 @@ class Main:
                 self.set_keys(key_alias='imported-env-keys', access_key_id=creds.access_key, secret_access_key=creds.secret_key,session_token=creds.token)
                 self.print('  Imported keys as "imported-env-keys"')
             except botocore.exceptions.ProfileNotFound:
-                self.print('\n  Did not find AWS credentials in the environment\n')
+                print('\n  Did not find AWS credentials in the environment\n')
+                sys.exit()
         else:
-            self.print('\n  Did not find AWS credentials in the environment\n')
+            print('\n  Did not find AWS credentials in the environment\n')
+            sys.exit()
 
     def run_aws_cli_command(self, command: List[str]) -> None:
         try:
@@ -786,7 +791,7 @@ class Main:
                 if row.startswith('Location: '):
                     path = row.split('Location: ')[1]
 
-        with open('{}/botocore/data/endpoints.json'.format(path), 'r+') as regions_file:
+        with open(DIR + '/{}/botocore/data/endpoints.json'.format(path), 'r+') as regions_file:
             endpoints = json.load(regions_file)
 
         for partition in endpoints['partitions']:
@@ -796,7 +801,7 @@ class Main:
                 for service in partition['services']:
                     regions[service] = partition['services'][service]
 
-        with open('modules/service_regions.json', 'w+') as services_file:
+        with open(DIR + '/modules/service_regions.json', 'w+') as services_file:
             json.dump(regions, services_file, default=str, sort_keys=True)
 
         self.print('  Region list updated to the latest version!')
@@ -984,6 +989,8 @@ aws_secret_access_key = {}
         elif module_name in self.COMMANDS:
             print('Error: "{}" is the name of a Pacu command, not a module. Try using it without "run" or "exec" in front.'.format(module_name))
         else:
+            print(module_name)
+            print(self.COMMANDS)
             print('Module not found. Is it spelled correctly? Try using the module search function.')
 
     def display_command_help(self, command_name: str) -> None:
@@ -1063,7 +1070,8 @@ aws_secret_access_key = {}
 
     def list_modules(self, search_term, by_category=False):
         found_modules_by_category = dict()
-        current_directory = os.getcwd()
+        current_directory = os.path.dirname(os.path.realpath(__file__))
+        print(current_directory)
         for root, directories, files in os.walk('{}/modules'.format(current_directory)):
             modules_directory_path = os.path.realpath('{}/modules'.format(current_directory))
             specific_module_directory = os.path.realpath(root)
@@ -1308,7 +1316,8 @@ aws_secret_access_key = {}
         self.database.add(session)
         self.database.commit()
 
-        session_downloads_directory = './sessions/{}/downloads/'.format(session_name)
+        session_downloads_directory = DIR + '/sessions/{}/downloads/'.format(session_name)
+        print(session_downloads_directory)
         if not os.path.exists(session_downloads_directory):
             os.makedirs(session_downloads_directory)
 
@@ -1336,7 +1345,7 @@ aws_secret_access_key = {}
         self.database.add(session)
         self.database.commit()
 
-        session_downloads_directory = './sessions/{}/downloads/'.format(name)
+        session_downloads_directory = DIR + '/sessions/{}/downloads/'.format(name)
         if not os.path.exists(session_downloads_directory):
             os.makedirs(session_downloads_directory)
 
@@ -1383,7 +1392,7 @@ aws_secret_access_key = {}
             if 'kali' in ua.lower() or 'parrot' in ua.lower() or 'pentoo' in ua.lower():  # If the local OS is Kali/Parrot/Pentoo Linux
                 # GuardDuty triggers a finding around API calls made from Kali Linux, so let's avoid that...
                 self.print('Detected environment as one of Kali/Parrot/Pentoo Linux. Modifying user agent to hide that from GuardDuty...')
-                with open('./user_agents.txt', 'r') as file:
+                with open(DIR + '/user_agents.txt', 'r') as file:
                     user_agents = file.readlines()
                 user_agents = [agent.strip() for agent in user_agents]  # Remove random \n's and spaces
                 new_ua = random.choice(user_agents)
@@ -1762,6 +1771,7 @@ aws_secret_access_key = {}
         args = parser.parse_args()
         
         if args.cli and args.session:
+            setup_database_if_not_present(settings.DATABASE_FILE_PATH)
             self.database = get_database_connection(settings.DATABASE_CONNECTION_PATH)
             self.new_cli_session(args.session)
             self.import_env_awscli_key()
